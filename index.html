@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Canteen | Order Food</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <style>
+        /* --- ORDER TICKET STYLES (Receipt Look) --- */
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding-bottom: 80px; /* Space for mobile nav */
+        }
+
+        .order-ticket {
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 20px;
+            position: relative;
+            border: 1px solid #334155;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            overflow: hidden;
+            transition: transform 0.2s;
+            animation: fadeIn 0.3s ease;
+        }
+
+        /* Status Color Strip on Left */
+        .order-ticket::before {
+            content: '';
+            position: absolute; top: 0; left: 0; width: 6px; height: 100%;
+            background: #cbd5e1; /* Default Gray */
+        }
+        .order-ticket.pending::before { background: #fca311; } /* Orange */
+        .order-ticket.completed::before { background: #22c55e; } /* Green */
+
+        .ticket-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px dashed #475569;
+        }
+        
+        .ticket-date { color: #94a3b8; font-size: 0.85rem; }
+
+        .ticket-items { list-style: none; padding: 0; margin: 0 0 15px 0; }
+        .ticket-items li {
+            display: flex; justify-content: space-between;
+            color: #f1f5f9; font-size: 0.95rem; margin-bottom: 6px;
+        }
+        .item-qty { color: #38bdf8; font-weight: bold; margin-right: 8px; }
+
+        .ticket-footer {
+            display: flex; justify-content: space-between; align-items: center;
+            padding-top: 10px;
+            border-top: 1px solid #334155;
+        }
+
+        .ticket-total { font-size: 1.2rem; font-weight: 800; color: white; }
+        .ticket-id { font-family: monospace; color: #64748b; font-size: 0.9rem; }
+        
+        .status-badge {
+            padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase;
+        }
+        .status-badge.pending { background: rgba(252, 163, 17, 0.2); color: #fca311; }
+        .status-badge.completed { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+
+        /* Mobile Logout Red Color */
+        .logout-btn-nav { color: #ef4444 !important; }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <nav class="navbar">
+            <div class="logo">
+                <h2>⚡ Smart Canteen</h2>
+            </div>
+            
+            <ul class="nav-links">
+                <li onclick="switchView('home')" id="nav-home" class="active">
+                    <span class="icon">🏠</span> <span class="label">Home</span>
+                </li>
+                <li onclick="switchView('menu')" id="nav-menu">
+                    <span class="icon">🍔</span> <span class="label">Menu</span>
+                </li>
+                <li onclick="switchView('cart')" id="nav-cart" class="cart-btn">
+                    <span class="icon">🛒</span> <span class="label">Cart</span>
+                    <span id="cart-badge" class="badge">0</span>
+                </li>
+                <li onclick="switchView('orders')" id="nav-orders">
+                    <span class="icon">🧾</span> <span class="label">Orders</span>
+                </li>
+                
+                <li onclick="logout()" class="logout-btn-nav">
+                    <span class="icon">🚪</span> <span class="label">Logout</span>
+                </li>
+            </ul>
+            <div class="user-profile">
+                <div class="info">
+                    <strong id="table-display"></strong>
+                    <small>Online</small>
+                </div>
+            </div>            
+        </nav>
+
+        <main class="content-area">
+            
+            <div id="view-home" class="view fade-in">
+                <div class="header">
+                    <div id="welcome-msg">
+                        <h1>Good Food..,  Good Mood.</h1>
+                    </div>
+                </div>
+                
+                <div class="promo-card">
+                    <h3>📢 Today's Special</h3>
+                    <p>Get 10% OFF on all Combo Meals!</p>
+                </div>
+
+                <button onclick="switchView('menu')" class="btn-primary large pulse-btn" style="margin-top:20px">Start Ordering ➔</button>
+            </div>
+
+            <div id="view-menu" class="view fade-in" style="display:none;">
+                <div class="header">
+                    <h2>Our Menu</h2>
+                    <p>Freshly prepared for you.</p>
+                    <p>-------------------------------------------------</p>
+                </div>
+                
+                <div class="category-scroll">
+                    </div>
+
+                <div id="menu-grid" class="menu-grid">
+                    <div class="loading">Loading menu...</div>
+                </div>
+            </div>
+
+            <div id="view-cart" class="view fade-in" style="display:none;">
+                <div class="header">
+                    <h2>Your Tray</h2>
+                    <p>-------------------------------------------------</p>
+                </div>
+
+                <div id="empty-cart" style="text-align:center; display:none; margin-top:50px;">
+                    <span style="font-size:3rem; display:block; margin-bottom:10px;">🥣</span>
+                    <p style="color:#94a3b8;">Your tray is empty.</p>
+                    <button onclick="switchView('menu')" class="btn-secondary">Browse Menu</button>
+                </div>
+
+                <div id="cart-content" style="display:none;">
+                    <div id="cart-items-list" class="cart-list"></div>
+                    
+                    <div class="bill-summary">
+                        <div class="row"><span>Subtotal</span> <span>₹<span id="subtotal">0</span></span></div>
+                        <div class="row"><span>Tax (5%)</span> <span>₹<span id="tax">0</span></span></div>
+                        <div class="row total"><span>Total</span> <span>₹<span id="grand-total">0</span></span></div>
+                    </div>
+
+                    <button onclick="placeOrder()" id="btn-checkout" class="btn-primary large">✅ Confirm & Get QR</button>
+                </div>
+
+                <div id="qr-screen" class="qr-overlay" style="display:none;">
+                    <div class="qr-card">
+                        <div class="success-icon">✔</div>
+                        <h3>Order Placed!</h3>
+                        <p>Show this code at the counter.</p>
+                        <div id="qrcode"></div>
+                        <p class="order-id">ID: <span id="generated-id">...</span></p>
+                        <button onclick="resetApp()" class="btn-secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-orders" class="view fade-in" style="display:none;">
+                <div class="header">
+                    <h2>My Orders</h2>
+                    <p>Track your past meals.</p>
+                    <p>-------------------------------------------------</p>
+                </div>
+                <div id="history-list" class="history-list">
+                    </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase-config.js';
+        import { 
+            collection, getDocs, addDoc, doc, query, where, onSnapshot 
+        } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore.js";
+
+        // --- GLOBAL VARIABLES ---
+        let cart = [];
+        let allMenuItems = [];
+        let historyListener = null; // Stores the real-time connection
+
+        const studentName = localStorage.getItem('studentName');
+        const studentId = localStorage.getItem('studentId'); 
+        const tableNum = Math.floor(Math.random() * 15) + 1; 
+
+        // --- 0. AUTH CHECK ---
+        // If not logged in, force redirect to login.html
+        if (!studentName || !studentId) {
+            window.location.href = 'login.html';
+        } else {
+            document.getElementById('table-display').innerHTML = `👋 <b>${studentName}</b> • Table #${tableNum}`;
+        }
+
+        // --- LOGOUT FUNCTION ---
+        window.logout = function() {
+            if(confirm("Are you sure you want to log out?")) {
+                localStorage.clear(); // Clear all saved data
+                window.location.href = 'login.html';
+            }
+        };
+
+        // --- NAVIGATION ---
+        window.switchView = function(viewName) {
+            // Hide all views
+            document.querySelectorAll('.view').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
+            
+            // Show selected view
+            document.getElementById(`view-${viewName}`).style.display = 'block';
+            const navItem = document.getElementById(`nav-${viewName}`);
+            if(navItem) navItem.classList.add('active');
+
+            // Load data based on view
+            if(viewName === 'menu') renderMenu();
+            
+            // Force UI Update for Cart to handle empty state
+            if(viewName === 'cart') updateCartUI();
+
+            // Setup Real-time Listener for Orders
+            if(viewName === 'orders') {
+                setupRealTimeHistory();
+            } else {
+                // Detach listener when leaving orders tab to save battery
+                if(historyListener) { 
+                    historyListener(); 
+                    historyListener = null;
+                }
+            }
+        }
+
+        /* --- MENU LOGIC --- */
+        async function fetchMenuData() {
+            const grid = document.getElementById('menu-grid');
+            try {
+                const snapshot = await getDocs(collection(db, "menu"));
+                allMenuItems = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if(data.isAvailable !== false) allMenuItems.push(data);
+                });
+                renderMenu('All');
+                setupCategories();
+            } catch (e) { grid.innerHTML = "<p>Kitchen Closed (Error fetching menu)</p>"; }
+        }
+
+        window.renderMenu = function(cat = 'All') {
+            const grid = document.getElementById('menu-grid');
+            grid.innerHTML = "";
+            
+            const items = cat === 'All' ? allMenuItems : allMenuItems.filter(i => i.category === cat);
+            
+            if(items.length === 0) {
+                grid.innerHTML = `<p style="text-align:center; width:100%; margin-top:20px; color:#94a3b8">No items found.</p>`;
+                return;
+            }
+
+            items.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'menu-item';
+                card.innerHTML = `
+                    <div class="item-details">
+                        <h4>${item.name}</h4>
+                        <small>${item.description || item.category}</small>
+                        <span class="price">₹${item.price}</span>
+                    </div>
+                    <button class="add-btn" onclick="addToCart('${item.name}', ${item.price})">ADD</button>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function setupCategories() {
+            const cats = ['All', ...new Set(allMenuItems.map(i => i.category).filter(Boolean))];
+            const cont = document.querySelector('.category-scroll');
+            cont.innerHTML = "";
+            cats.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = `cat-pill ${c === 'All' ? 'active' : ''}`;
+                btn.innerText = c;
+                btn.onclick = () => {
+                    document.querySelectorAll('.cat-pill').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderMenu(c);
+                };
+                cont.appendChild(btn);
+            });
+        }
+
+        /* --- CART LOGIC --- */
+        window.addToCart = function(name, price) {
+            const existing = cart.find(i => i.name === name);
+            if(existing) existing.qty++; else cart.push({name, price, qty: 1});
+            updateCartUI();
+            
+            // Badge Animation
+            const badge = document.getElementById('cart-badge');
+            badge.classList.add('pop');
+            setTimeout(() => badge.classList.remove('pop'), 300);
+        };
+
+        window.updateCartUI = function() {
+            const list = document.getElementById('cart-items-list');
+            const badge = document.getElementById('cart-badge');
+            
+            // EMPTY CART CHECK
+            if(cart.length === 0) {
+                document.getElementById('empty-cart').style.display = 'block'; // Show empty msg
+                document.getElementById('cart-content').style.display = 'none'; // Hide checkout button
+                badge.style.display = 'none';
+                return;
+            }
+
+            // FILLED CART
+            document.getElementById('empty-cart').style.display = 'none';
+            document.getElementById('cart-content').style.display = 'block';
+
+            list.innerHTML = "";
+            let total = 0;
+            let count = 0;
+
+            cart.forEach((item, index) => {
+                total += item.price * item.qty;
+                count += item.qty;
+                list.innerHTML += `
+                    <div class="cart-item">
+                        <div><strong>${item.name}</strong><br><small>₹${item.price}</small></div>
+                        <div class="actions">
+                            <button onclick="modQty(${index}, -1)">−</button>
+                            <span>${item.qty}</span>
+                            <button onclick="modQty(${index}, 1)">+</button>
+                        </div>
+                    </div>`;
+            });
+
+            const tax = Math.round(total * 0.05);
+            document.getElementById('subtotal').innerText = total;
+            document.getElementById('tax').innerText = tax;
+            document.getElementById('grand-total').innerText = total + tax;
+            badge.innerText = count; 
+            badge.style.display = 'flex';
+        }
+
+        window.modQty = function(i, d) {
+            cart[i].qty += d;
+            if(cart[i].qty <= 0) cart.splice(i, 1);
+            updateCartUI();
+        }
+
+        /* --- CHECKOUT --- */
+        window.placeOrder = async function() {
+            // SECURITY CHECK
+            if(cart.length === 0) {
+                alert("Cart is empty.");
+                return;
+            }
+
+            const btn = document.getElementById('btn-checkout');
+            const total = parseInt(document.getElementById('grand-total').innerText);
+            btn.innerHTML = "⏳ Processing..."; btn.disabled = true;
+
+            try {
+                const docRef = await addDoc(collection(db, "orders"), {
+                    items: cart, totalAmount: total, tableNumber: tableNum,
+                    studentName: studentName, studentId: studentId || 'N/A',
+                    status: "Pending", timestamp: new Date()
+                });
+
+                // Show QR Overlay
+                document.getElementById('qrcode').innerHTML = "";
+                new QRCode(document.getElementById("qrcode"), { text: docRef.id, width: 150, height: 150 });
+                document.getElementById('generated-id').innerText = docRef.id.substring(0,8);
+                document.getElementById('qr-screen').style.display = 'flex';
+
+            } catch(e) { 
+                console.error(e); alert("Order failed."); 
+                btn.disabled = false; btn.innerHTML = "✅ Confirm";
+            }
+        };
+
+        window.resetApp = function() {
+            cart = []; updateCartUI();
+            document.getElementById('qr-screen').style.display = 'none';
+            document.getElementById('btn-checkout').disabled = false;
+            document.getElementById('btn-checkout').innerHTML = "✅ Confirm & Get QR";
+            switchView('orders'); // Go to orders to see the live update
+        }
+
+        /* --- REAL-TIME HISTORY (Client-Side Sort Fix) --- */
+        function setupRealTimeHistory() {
+            const list = document.getElementById('history-list');
+            list.innerHTML = "<p style='text-align:center; margin-top:50px;'>Connecting to Kitchen...</p>";
+
+            // Stop prev listener
+            if(historyListener) historyListener();
+
+            // 1. QUERY WITHOUT SORTING (Avoids Index Error)
+            const q = query(
+                collection(db, "orders"), 
+                where("studentId", "==", studentId)
+            );
+
+            // 2. LISTEN
+            historyListener = onSnapshot(q, (snapshot) => {
+                if(snapshot.empty) {
+                    list.innerHTML = "<p style='text-align:center; color:#94a3b8; margin-top:50px;'>No past orders found.</p>";
+                    return;
+                }
+
+                list.innerHTML = ""; 
+
+                // 3. SORT IN JAVASCRIPT
+                let orders = [];
+                snapshot.forEach(doc => {
+                    orders.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Sort Newest First (b.timestamp - a.timestamp)
+                orders.sort((a, b) => {
+                    const timeA = a.timestamp ? a.timestamp.seconds : 0;
+                    const timeB = b.timestamp ? b.timestamp.seconds : 0;
+                    return timeB - timeA;
+                });
+
+                // 4. RENDER
+                orders.forEach(order => {
+                    const statusClass = (order.status || 'pending').toLowerCase();
+                    
+                    let dateStr = 'Just now';
+                    if(order.timestamp) {
+                        dateStr = new Date(order.timestamp.seconds * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                    }
+
+                    const itemsList = order.items ? order.items.map(i => 
+                        `<li><span>${i.name}</span> <span class="item-qty">x${i.qty}</span></li>`
+                    ).join('') : '<li>Details not saved</li>';
+
+                    list.innerHTML += `
+                        <div class="order-ticket ${statusClass}">
+                            <div class="ticket-header">
+                                <span class="ticket-date">${dateStr}</span>
+                                <span class="status-badge ${statusClass}">${order.status || 'Pending'}</span>
+                            </div>
+                            <ul class="ticket-items">
+                                ${itemsList}
+                            </ul>
+                            <div class="ticket-footer">
+                                <span class="ticket-id">#${order.id.substring(0,8)}</span>
+                                <span class="ticket-total">₹${order.totalAmount}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+            }, (error) => {
+                console.error("History Error:", error);
+                list.innerHTML = `<p style='color:red; text-align:center;'>Error: ${error.message}</p>`;
+            });
+        }
+
+        // Init
+        fetchMenuData();
+    </script>
+</body>
+</html>

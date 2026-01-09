@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Canteen | Staff Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        /* (Keep your existing CSS here - same as before) */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        body { background-color: #0f172a; color: white; height: 100vh; display: flex; justify-content: center; align-items: center; background-image: radial-gradient(circle at bottom left, #1e293b 0%, #0f172a 40%); }
+        .login-card { background: #1e293b; padding: 40px; width: 100%; max-width: 400px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid #334155; text-align: center; animation: slideUp 0.5s ease-out; position: relative; overflow: hidden; }
+        .login-card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: linear-gradient(90deg, #38bdf8, #818cf8); }
+        .logo-icon { font-size: 3rem; margin-bottom: 10px; display: inline-block; filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.4)); }
+        h1 { font-size: 2rem; margin-bottom: 5px; color: white; font-weight: 800; }
+        .highlight { color: #38bdf8; }
+        p.subtitle { color: #94a3b8; margin-bottom: 30px; font-size: 0.9rem; letter-spacing: 1px; text-transform: uppercase; }
+        .input-group { text-align: left; margin-bottom: 15px; }
+        label { display: block; color: #cbd5e1; font-size: 0.85rem; margin-bottom: 5px; font-weight: 600; }
+        input { width: 100%; padding: 14px; background: #0f172a; border: 1px solid #334155; border-radius: 10px; color: white; font-size: 1rem; outline: none; transition: 0.3s; }
+        input:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2); }
+        .btn-login { width: 100%; padding: 15px; background: #38bdf8; color: #0f172a; border: none; border-radius: 10px; font-weight: 800; font-size: 1rem; cursor: pointer; margin-top: 20px; transition: transform 0.1s, box-shadow 0.2s; }
+        .btn-login:hover { box-shadow: 0 0 15px rgba(56, 189, 248, 0.4); }
+        .btn-login:active { transform: scale(0.98); }
+        .back-link { margin-top: 20px; font-size: 0.85rem; color: #64748b; text-decoration: none; display: inline-block; }
+        .error-msg { color: #ef4444; font-size: 0.9rem; margin-top: 10px; display: none; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <div class="logo-icon">👨‍🍳</div>
+        <h1>Smart <span class="highlight">Canteen</span></h1>
+        <p class="subtitle">Kitchen & Staff Portal</p>
+
+        <form id="staffForm">
+            <div class="input-group">
+                <label>Staff ID</label>
+                <input type="text" id="staffId" placeholder="admin" required>
+            </div>
+
+            <div class="input-group">
+                <label>Access Key</label>
+                <input type="password" id="password" placeholder="••••••••" required>
+            </div>
+            
+            <p id="error-text" class="error-msg">❌ Access Denied</p>
+
+            <button type="submit" class="btn-login">Open Dashboard ⚡</button>
+        </form>
+
+        <a href="login.html" class="back-link">← Go to Student Login</a>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase-config.js';
+        import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore.js";
+
+        // --- 0. AUTO-REDIRECT CHECK ---
+        // If user is already logged in, don't show login form, just go to dashboard
+        const existingUser = localStorage.getItem('staffUser');
+        if (existingUser) {
+            window.location.href = 'staff.html';
+        }
+
+        document.getElementById('staffForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const staffId = document.getElementById('staffId').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const btn = document.querySelector('.btn-login');
+            const errorText = document.getElementById('error-text');
+
+            btn.innerHTML = "Verifying...";
+            btn.disabled = true;
+            errorText.style.display = 'none';
+
+            try {
+                // Query Database for Staff
+                const q = query(
+                    collection(db, "staff"), 
+                    where("id", "==", staffId), 
+                    where("password", "==", password)
+                );
+
+                const querySnapshot = await getDocs(q);
+
+                if (!querySnapshot.empty) {
+                    const staffData = querySnapshot.docs[0].data();
+                    localStorage.setItem('staffUser', staffData.name);
+                    
+                    btn.innerHTML = "Access Granted! ⚡";
+                    setTimeout(() => window.location.href = 'staff.html', 1000);
+                } else {
+                    throw new Error("Access Denied");
+                }
+
+            } catch (error) {
+                console.error("Login Failed:", error);
+                btn.innerHTML = "Open Dashboard ⚡";
+                btn.disabled = false;
+                errorText.style.display = 'block';
+            }
+        });
+    </script>
+    
+</body>
+</html>

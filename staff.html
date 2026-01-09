@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Canteen | Staff</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://unpkg.com/read-excel-file@5.x/bundle/read-excel-file.min.js"></script>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>⚡ Smart Canteen </h2>
+                <span>STAFF PORTAL</span>
+            </div>
+            
+            <ul class="nav-links">
+                <li onclick="switchTab('scanner')" id="nav-scanner" class="active">
+                    <span class="icon">📷</span> Scan Order
+                </li>
+                <li onclick="switchTab('history')" id="nav-history">
+                    <span class="icon">📜</span> History
+                </li>
+                <li onclick="switchTab('upload')" id="nav-upload">
+                    <span class="icon">☁️</span> Upload Menu
+                </li>
+                
+                <li onclick="logout()" style="margin-top: auto; color: #ef4444; border-top: 1px solid #334155;">
+                    <span class="icon">🚪</span> Logout
+                </li>
+            </ul>
+
+            <div class="user-profile">
+                <div class="avatar">👨‍🍳</div>
+                <div class="info">
+                    <strong id="staff-name-display">Staff Member</strong>
+                    <small>Online</small>
+                </div>
+            </div>
+        </nav>
+
+        <main class="content">
+            
+            <div id="scanner-section" class="panel fade-in">
+                <div class="panel-header">
+                    <h1>QR Verification</h1>
+                    <p>Scan customer codes to verify payments.</p>
+                </div>
+
+                <div class="scanner-layout">
+                    <div class="camera-box">
+                        <div id="reader"></div>
+                    </div>
+
+                    <div id="scan-result" class="result-card" style="display: none;">
+                        <div class="check-icon">✓</div>
+                        <h2>Verified!</h2>
+                        <p class="order-id">ID: <span id="scan-id">#123456</span></p>
+                        
+                        <div class="receipt-box">
+                            <ul id="scan-items"></ul>
+                            </div>
+                        
+                        <button onclick="resumeScan()" class="btn-primary" style="margin-top: 10px;">Scan Next</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="history-section" class="panel fade-in" style="display:none;">
+                <div class="panel-header">
+                    <h1>Order History</h1>
+                    <button onclick="loadHistory()" class="btn-refresh">🔄 Refresh Data</button>
+                </div>
+
+                <div class="table-container">
+                    <table class="modern-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Table</th>
+                                <th>Order Details</th>
+                                <th>Total</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-body">
+                            <tr><td colspan="5" style="text-align:center; padding: 20px;">Click Refresh to load...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="upload-section" class="panel fade-in" style="display:none;">
+                <div class="panel-header">
+                    <h1>Menu Management</h1>
+                    <p>Bulk upload items via Excel (.xlsx)</p>
+                </div>
+
+                <div class="upload-zone">
+                    <div class="drop-area">
+                        <span class="icon-large">📂</span>
+                        <h3>Select Excel File</h3>
+                        <input type="file" id="excel-input" accept=".xlsx" />
+                    </div>
+                    
+                    <button id="upload-btn" onclick="processExcel()" class="btn-primary large">🚀 Start Upload</button>
+                    <div id="upload-status" class="status-text"></div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase-config.js';
+        import { 
+            collection, getDocs, doc, getDoc, updateDoc, addDoc, query, orderBy, limit 
+        } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore.js";
+
+        // --- 0. SECURITY CHECK (VALIDATE LOGIN) ---
+        const staffUser = localStorage.getItem('staffUser');
+        
+        if (!staffUser) {
+            // Not logged in? Kick them out!
+            window.location.href = 'staff-login.html';
+        } else {
+            // Logged in? Update name in sidebar
+            const nameEl = document.getElementById('staff-name-display');
+            if(nameEl) nameEl.innerText = staffUser;
+        }
+
+        // --- LOGOUT FUNCTION ---
+        window.logout = function() {
+            if(confirm("Log out of Staff Portal?")) {
+                localStorage.removeItem('staffUser');
+                window.location.href = 'staff-login.html';
+            }
+        };
+
+        /* --- 1. SCANNER LOGIC --- */
+        let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        
+        function onScanSuccess(decodedText) {
+            html5QrcodeScanner.clear();
+            verifyOrder(decodedText);
+        }
+
+        async function verifyOrder(orderId) {
+            try {
+                const orderRef = doc(db, "orders", orderId);
+                const docSnap = await getDoc(orderRef);
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    
+                    document.getElementById('scan-result').style.display = 'flex';
+                    document.getElementById('scan-id').innerText = orderId.substring(0, 8);
+                    
+                    // List items
+                    document.getElementById('scan-items').innerHTML = 
+                        data.items.map(i => `<li><span>${i.name}</span> <b>x${i.qty}</b></li>`).join('');
+
+                    // Add "Mark Served" Button Logic
+                    const btnContainer = document.querySelector('.receipt-box');
+                    const oldBtn = document.getElementById('btn-serve'); // Remove duplicate if any
+                    if(oldBtn) oldBtn.remove();
+
+                    if(data.status !== "Completed") {
+                        const btn = document.createElement('button');
+                        btn.id = 'btn-serve';
+                        btn.className = 'btn-primary';
+                        btn.style.backgroundColor = '#22c55e'; // Green
+                        btn.style.marginTop = '15px';
+                        btn.style.width = '100%';
+                        btn.innerText = "✅ Mark as Served";
+                        
+                        btn.onclick = async () => {
+                            btn.innerText = "Updating...";
+                            await updateDoc(orderRef, { status: "Completed" });
+                            btn.remove();
+                            alert("Order Completed!");
+                        };
+                        btnContainer.appendChild(btn);
+                    }
+
+                } else {
+                    alert("❌ Order Not Found");
+                    resumeScan();
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Error scanning.");
+                resumeScan();
+            }
+        }
+
+        window.resumeScan = function() {
+            document.getElementById('scan-result').style.display = 'none';
+            html5QrcodeScanner.render(onScanSuccess);
+        }
+        
+        // Start Scanner
+        html5QrcodeScanner.render(onScanSuccess);
+
+
+        /* --- 2. HISTORY LOGIC --- */
+        window.loadHistory = async function() {
+            const tbody = document.getElementById('history-body');
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading...</td></tr>';
+            
+            try {
+                const q = query(collection(db, "orders"), orderBy("timestamp", "desc"), limit(20));
+                const snapshot = await getDocs(q);
+                
+                if(snapshot.empty) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No recent orders.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = "";
+                snapshot.forEach(docSnap => {
+                    const data = docSnap.data();
+                    const time = data.timestamp ? new Date(data.timestamp.seconds*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--';
+                    const itemsTxt = data.items ? data.items.map(i => i.name).join(', ') : 'No items';
+
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${time}</td>
+                            <td><span class="badge-gray">#${data.tableNumber || '?'}</span></td>
+                            <td style="color:#cbd5e1">${itemsTxt}</td>
+                            <td>₹${data.totalAmount}</td>
+                            <td><span class="badge-${(data.status||'Pending').toLowerCase()}">${data.status||'Pending'}</span></td>
+                        </tr>
+                    `;
+                });
+            } catch (e) { 
+                console.error(e); 
+                tbody.innerHTML = '<tr><td colspan="5" style="color:orange; text-align:center;">⚠️ Check Console for Index Error</td></tr>';
+            }
+        };
+
+
+        /* --- 3. UPLOAD LOGIC --- */
+        window.processExcel = async function() {
+            const input = document.getElementById('excel-input');
+            const status = document.getElementById('upload-status');
+            
+            if (!input.files[0]) return alert("Please choose a file!");
+            status.innerText = "Reading file...";
+            
+            readXlsxFile(input.files[0]).then(async (rows) => {
+                let count = 0;
+                // Skip header (i=1)
+                for (let i = 1; i < rows.length; i++) {
+                    const [name, price, cat, desc] = rows[i];
+                    if(name && price) {
+                        await addDoc(collection(db, "menu"), {
+                            name, price: Number(price), category: cat||"General", description: desc||"", isAvailable: true
+                        });
+                        count++;
+                    }
+                }
+                status.innerHTML = `<span style="color:#4ade80">✔ Success! Added ${count} items.</span>`;
+            });
+        };
+
+
+        /* --- NAVIGATION --- */
+        window.switchTab = function(tab) {
+            document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
+            document.querySelectorAll('.nav-links li').forEach(l => l.classList.remove('active'));
+            
+            document.getElementById(`${tab}-section`).style.display = 'block';
+            document.getElementById(`nav-${tab}`).classList.add('active');
+
+            if(tab === 'scanner') html5QrcodeScanner.clear().catch(()=>{}).then(() => html5QrcodeScanner.render(onScanSuccess));
+            if(tab === 'history') loadHistory();
+        };
+
+    </script>
+</body>
+</html>

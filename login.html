@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Canteen | Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        /* --- STYLES (Same as before) --- */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        
+        body {
+            background-color: #0f172a; /* Dark Slate */
+            color: white;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-image: radial-gradient(circle at top right, #1e293b 0%, #0f172a 40%);
+        }
+
+        .login-card {
+            background: #1e293b;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border: 1px solid #334155;
+            text-align: center;
+            animation: slideUp 0.5s ease-out;
+            display: none; /* Hidden by default until we check login status */
+        }
+
+        .logo-icon {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            display: inline-block;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 5px;
+            background: linear-gradient(to right, #fca311, #fbbf24);
+            -webkit-background-clip: text;
+            color: transparent;
+            font-weight: 800;
+        }
+
+        p.subtitle { color: #94a3b8; margin-bottom: 30px; font-size: 0.9rem; }
+
+        .input-group { text-align: left; margin-bottom: 15px; }
+        label { display: block; color: #cbd5e1; font-size: 0.85rem; margin-bottom: 5px; font-weight: 600; }
+        
+        input {
+            width: 100%;
+            padding: 14px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            outline: none;
+            transition: 0.3s;
+        }
+
+        input:focus { border-color: #fca311; box-shadow: 0 0 0 3px rgba(252, 163, 17, 0.2); }
+
+        .btn-login {
+            width: 100%;
+            padding: 15px;
+            background: #fca311;
+            color: black;
+            border: none;
+            border-radius: 10px;
+            font-weight: 800;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.1s;
+        }
+        .btn-login:active { transform: scale(0.98); }
+        .btn-login:disabled { opacity: 0.7; cursor: not-allowed; }
+
+        .footer-link { margin-top: 20px; font-size: 0.8rem; color: #64748b; }
+        .error-msg { color: #ef4444; font-size: 0.9rem; margin-top: 10px; display: none; }
+
+        /* Animation */
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
+    </style>
+</head>
+<body>
+
+    <div class="login-card" id="loginCard">
+        <div class="logo-icon">🥗</div>
+        <h1>Smart Canteen</h1>
+        <p class="subtitle">Student Ordering Portal</p>
+
+        <form id="loginForm">
+            <div class="input-group">
+                <label>Student ID / Roll No</label>
+                <input type="text" id="stdId" placeholder="e.g. 24058" required>
+            </div>
+
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="password" placeholder="••••••••" required>
+            </div>
+            
+            <p id="error-text" class="error-msg">❌ Invalid Credentials</p>
+
+            <button type="submit" class="btn-login">Login to Canteen ➔</button>
+        </form>
+
+        <p class="footer-link">Forgot Password? Contact Admin</p>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase-config.js';
+        import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore.js";
+
+        // --- 1. AUTO-REDIRECT CHECK (The Fix) ---
+        // Run this immediately. If user is logged in, redirect and don't show the form.
+        const existingStudent = localStorage.getItem('studentName');
+        
+        if (existingStudent) {
+            window.location.href = 'index.html';
+        } else {
+            // Not logged in? Show the form now.
+            document.getElementById('loginCard').style.display = 'block';
+        }
+
+        // --- 2. LOGIN LOGIC ---
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const stdId = document.getElementById('stdId').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const btn = document.querySelector('.btn-login');
+            const errorText = document.getElementById('error-text');
+
+            // UI Loading State
+            btn.innerHTML = "Verifying...";
+            btn.disabled = true;
+            errorText.style.display = 'none';
+
+            try {
+                // Query Database
+                const q = query(
+                    collection(db, "students"), 
+                    where("id", "==", stdId), 
+                    where("password", "==", password)
+                );
+
+                const querySnapshot = await getDocs(q);
+
+                if (!querySnapshot.empty) {
+                    const studentData = querySnapshot.docs[0].data();
+                    
+                    // Save Session
+                    localStorage.setItem('studentName', studentData.name);
+                    localStorage.setItem('studentId', studentData.id);
+                    
+                    btn.innerHTML = "Success! Redirecting...";
+                    setTimeout(() => window.location.href = 'index.html', 500);
+                } else {
+                    throw new Error("Invalid Credentials");
+                }
+
+            } catch (error) {
+                console.error("Login Failed:", error);
+                btn.innerHTML = "Login to Canteen ➔";
+                btn.disabled = false;
+                errorText.style.display = 'block';
+                errorText.innerText = "❌ Incorrect ID or Password";
+            }
+        });
+    </script>
+</body>
+</html>
